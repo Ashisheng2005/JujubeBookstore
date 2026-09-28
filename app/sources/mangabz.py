@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 from typing import Any
 from urllib.parse import quote
@@ -38,12 +39,17 @@ _ABS_IMAGE_RE = re.compile(r'https?://[^"\'\s,\]]+\.(?:jpg|jpeg|png|webp)[^"\'\s
 
 #: 单章最多翻多少页（防止上游异常时死循环）
 _MAX_IMAGE_PAGES = 500
+#: 章节图片并发抓取数（一次请求返回 k 页，按下标步进并发取）
+IMAGE_FETCH_CONCURRENCY = 4
 
 
 class MangabzSource(ComicSource):
     key = "mangabz"
     name = "Mangabz"
     needs_proxy = False
+    #: 直连其实能通，但该域名的 A 记录被污染（AAAA 指向黑洞），实测直连 8~15s、偶发超时，
+    #: 走代理约 6.5s。所以配了代理就优先用代理。
+    prefer_proxy = True
     image_hosts = ("mangabz.com",)
     image_referer = "https://www.mangabz.com/"
 
@@ -184,24 +190,46 @@ class MangabzSource(ComicSource):
         count_match = _IMAGE_COUNT_RE.search(page_html)
         expected = int(count_match.group(1)) if count_match else None
 
-        images: list[str] = []
-        seen: set[str] = set()
-        page = 1
-        while page <= _MAX_IMAGE_PAGES:
-            api = f"{self.base_url}/m{cid}/chapterimage.ashx?cid={cid}&page={page}"
-            body = await self._get_text(api, ajax=True, referer=chapter_url)
-            batch = self._extract_images(body)
-            fresh = [url for url in batch if url not in seen]
-            if not fresh:
-                break
-            for url in fresh:
-                seen.add(url)
-                images.append(url)
-            if expected is not None and len(images) >= expected:
-                break
-            page += len(batch)
-        if expected is not None:
+        api = f"{self.base_url}/m{cid}/chapterimage.ashx?cid={cid}"
+
+        async def fetch(start: int) -> list[str]:
+            body = await self._get_text(f"{api}&page={start}", ajax=True, referer=chapter_url)
+            return self._extract_images(body)
+
+        images = await fetch(1)
+        if not images:
+            raise NotFoundError(f"Mangabz 章节 {chapter_id} 没有可用图片", source=self.key)
+        seen = set(images)
+
+        if expected is None:
+            # 不知道总页数时只能顺序翻页，直到某一页没有新图
+            page = 1 + len(images)
+            while page <= _MAX_IMAGE_PAGES:
+                batch = await fetch(page)
+                fresh = [url for url in batch if url not in seen]
+                if not fresh:
+                    break
+                images.extend(fresh)
+                seen.update(fresh)
+                page += len(batch)
+        else:
+            # 一次请求返回 k 页，所以下一批起点按 k 步进（不是 +1），并发抓取省时间
+            step = max(len(images), 1)
+            starts = list(range(1 + step, expected + 1, step))
+            for index in range(0, len(starts), IMAGE_FETCH_CONCURRENCY):
+                chunk = starts[index : index + IMAGE_FETCH_CONCURRENCY]
+                batches = await asyncio.gather(*(fetch(page) for page in chunk), return_exceptions=True)
+                for batch in batches:
+                    if isinstance(batch, BaseException):
+                        continue  # 单页失败不拖垮整章，最终按期望页数截断
+                    for url in batch:
+                        if url not in seen:
+                            seen.add(url)
+                            images.append(url)
+                if len(images) >= expected:
+                    break
             images = images[:expected]
+
         if not images:
             raise NotFoundError(f"Mangabz 章节 {chapter_id} 没有可用图片", source=self.key)
 

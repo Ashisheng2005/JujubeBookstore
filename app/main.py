@@ -26,8 +26,6 @@ from .http_client import HttpClientPool
 from .schemas import ChapterImages, ComicDetail, ComicList, SearchResult, SourceInfo
 from .sources import SOURCE_CLASSES, available_keys, create_source
 
-_app_state_ready = False
-
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -57,7 +55,6 @@ app.add_middleware(
 
 def _init_state(app: FastAPI) -> None:
     """延迟初始化运行时状态，测试里直接调用 API 也不会炸。"""
-    global _app_state_ready
     state = app.state
     if getattr(state, "pool", None) is not None:
         return
@@ -66,7 +63,6 @@ def _init_state(app: FastAPI) -> None:
     state.pool = HttpClientPool(settings)
     state.detail_cache = TTLCache[ComicDetail](settings.detail_ttl)
     state.chapter_cache = TTLCache[ChapterImages](settings.chapter_ttl)
-    _app_state_ready = True
 
 
 def _state(request: Request) -> tuple[Settings, HttpClientPool, TTLCache, TTLCache]:
@@ -200,10 +196,9 @@ async def image_proxy(
         raise HTTPException(status_code=403, detail="图片中转已通过 JUJUBE_IMAGE_PROXY=0 关闭")
 
     host = (urlparse(url).hostname or "").lower()
-    allowed = tuple(h.lower() for h in comic_source.image_hosts)
     if urlparse(url).scheme not in {"http", "https"} or not host:
         raise HTTPException(status_code=400, detail="图片地址非法")
-    if not any(host == h or host.endswith("." + h) for h in allowed):
+    if not comic_source.allows_image_host(host):
         raise HTTPException(status_code=403, detail=f"域名 {host} 不在该源允许列表内")
 
     headers = {"Referer": comic_source.image_referer} if comic_source.image_referer else {}

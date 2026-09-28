@@ -137,3 +137,31 @@ def test_chapter_steps_pages_by_returned_batch(source, monkeypatch):
     assert calls == [1, 3]
     assert images.count == 3
     assert images.images[-1].endswith("/3.jpg")
+
+
+def test_chapter_fetches_remaining_pages_concurrently_in_order(source, monkeypatch):
+    """一次返回 2 页，则起点是 1/3/5/7…，并发抓取后仍要按页码顺序拼装。"""
+    calls: list[int] = []
+
+    async def fake_text(url, **kwargs):
+        if "chapterimage" not in url:
+            return "var MANGABZ_CID=29397; var MANGABZ_IMAGE_COUNT=7;"
+        page = int(url.rsplit("page=", 1)[1])
+        calls.append(page)
+        await asyncio.sleep(0.01)  # 制造乱序完成的可能
+        return f"PAGE {page}"
+
+    def fake_extract(body: str) -> list[str]:
+        page = int(body.split()[1])
+        # 每页请求返回「当前页 + 下一页」两张，最后一页只有一张
+        urls = [f"https://image.mangabz.com/a/{page}.jpg"]
+        if page + 1 <= 7:
+            urls.append(f"https://image.mangabz.com/a/{page + 1}.jpg")
+        return urls
+
+    monkeypatch.setattr(source, "_get_text", fake_text)
+    monkeypatch.setattr(source, "_extract_images", fake_extract)
+
+    images = asyncio.run(source.chapter("139", "29397"))
+    assert sorted(calls) == [1, 3, 5, 7]
+    assert [url.rsplit("/", 1)[-1] for url in images.images] == [f"{i}.jpg" for i in range(1, 8)]

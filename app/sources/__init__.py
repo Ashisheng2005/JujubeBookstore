@@ -5,10 +5,11 @@ from __future__ import annotations
 from ..http_client import HttpClientPool
 from .base import ComicSource
 from .mangabz import MangabzSource
+from .mangacopy import MangacopySource
 from .zaimanhua import ZaimanhuaSource
 
 #: 注册顺序即 ``/api/sources`` 的返回顺序
-SOURCE_CLASSES: tuple[type[ComicSource], ...] = (ZaimanhuaSource, MangabzSource)
+SOURCE_CLASSES: tuple[type[ComicSource], ...] = (ZaimanhuaSource, MangabzSource, MangacopySource)
 
 _REGISTRY: dict[str, type[ComicSource]] = {cls.key: cls for cls in SOURCE_CLASSES}
 
@@ -37,6 +38,7 @@ __all__ = [
     "ComicSource",
     "SOURCE_CLASSES",
     "MangabzSource",
+    "MangacopySource",
     "ZaimanhuaSource",
     "available_keys",
     "create_source",

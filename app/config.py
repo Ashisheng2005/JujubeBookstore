@@ -75,6 +75,7 @@ class Settings:
     chapter_ttl: int
     image_proxy_enabled: bool
     image_proxy_max_bytes: int
+    http_retries: int
 
     @property
     def proxy_enabled(self) -> bool:
@@ -97,4 +98,5 @@ def load_settings() -> Settings:
         chapter_ttl=_env_int("CHAPTER_TTL", 300),
         image_proxy_enabled=_env_bool("IMAGE_PROXY", True),
         image_proxy_max_bytes=_env_int("IMAGE_PROXY_MAX_BYTES", 15 * 1024 * 1024),
+        http_retries=_env_int("HTTP_RETRIES", 2),
     )

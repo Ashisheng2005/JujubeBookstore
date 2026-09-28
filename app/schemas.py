@@ -14,6 +14,7 @@ class SourceInfo(BaseModel):
     key: str = Field(description="源标识，用于 URL 中的 {source}")
     name: str = Field(description="展示名")
     needs_proxy: bool = Field(description="是否必须通过代理访问")
+    prefer_proxy: bool = Field(default=False, description="是否「有代理就优先走代理」")
     image_hosts: list[str] = Field(default_factory=list, description="允许走图片中转的域名")
 
 
