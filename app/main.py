@@ -1,12 +1,19 @@
 """FastAPI 入口。
 
-后端只做三件事（外加一个可选的最新更新列表）：
+漫画源（图片阅读型）只做三件事（外加一个最新更新列表）：
 
 * ``GET /api/{source}/search``                     搜索
 * ``GET /api/{source}/comic/{comic_id}``           章节列表
 * ``GET /api/{source}/comic/{id}/chapter/{cid}``   图片直链
 * ``GET /api/{source}/latest``                     最近更新（探索页用）
 * ``GET /api/{source}/image``                      图片中转（绕开防盗链/CORS）
+
+资源索引源（BT/磁力）是另一套模型，走独立命名空间：
+
+* ``GET /api/resources``                                    可用资源源
+* ``GET /api/resources/{source}/search``                    搜索资源
+* ``GET /api/resources/{source}/latest``                    最新发布
+* ``GET /api/resources/{source}/item/{item_id}``            磁力 / 种子 / 文件列表
 """
 
 from __future__ import annotations
@@ -23,7 +30,18 @@ from .cache import TTLCache
 from .config import Settings, load_settings
 from .errors import NotFoundError, ProxyRequiredError, SourceError
 from .http_client import HttpClientPool
-from .schemas import ChapterImages, ComicDetail, ComicList, SearchResult, SourceInfo
+from .resources import RESOURCE_CLASSES, create_resource
+from .resources import available_keys as resource_keys
+from .schemas import (
+    ChapterImages,
+    ComicDetail,
+    ComicList,
+    ResourceDetail,
+    ResourceList,
+    ResourceSearchResult,
+    SearchResult,
+    SourceInfo,
+)
 from .sources import SOURCE_CLASSES, available_keys, create_source
 
 
@@ -90,6 +108,17 @@ def _translate(exc: SourceError) -> HTTPException:
     return HTTPException(status_code=502, detail=str(exc))
 
 
+def _resource_or_404(request: Request, source: str):
+    _, pool, _, _ = _state(request)
+    try:
+        return create_resource(source, pool)
+    except KeyError:
+        raise HTTPException(
+            status_code=404,
+            detail=f"未知的资源源 {source!r}，可用: {', '.join(resource_keys())}",
+        ) from None
+
+
 @app.get("/healthz", summary="健康检查")
 async def healthz(request: Request) -> dict[str, Any]:
     settings, _, _, _ = _state(request)
@@ -97,6 +126,7 @@ async def healthz(request: Request) -> dict[str, Any]:
         "status": "ok",
         "version": __version__,
         "sources": available_keys(),
+        "resource_sources": resource_keys(),
         "proxy_enabled": settings.proxy_enabled,
     }
 
@@ -105,6 +135,12 @@ async def healthz(request: Request) -> dict[str, Any]:
 async def list_sources(request: Request) -> list[SourceInfo]:
     _, pool, _, _ = _state(request)
     return [SourceInfo(**create_source(key, pool).info()) for key in available_keys()]
+
+
+@app.get("/api/resources", response_model=list[SourceInfo], summary="可用资源索引源（BT/磁力）")
+async def list_resource_sources(request: Request) -> list[SourceInfo]:
+    _, pool, _, _ = _state(request)
+    return [SourceInfo(**create_resource(key, pool).info()) for key in resource_keys()]
 
 
 @app.get("/api/{source}/search", response_model=SearchResult, summary="搜索漫画")
@@ -218,4 +254,72 @@ async def image_proxy(
     )
 
 
-__all__ = ["app", "SOURCE_CLASSES"]
+# --- 资源索引源（BT / 磁力） ------------------------------------------------
+@app.get(
+    "/api/resources/{source}/search",
+    response_model=ResourceSearchResult,
+    summary="搜索资源（BT/磁力）",
+)
+async def resource_search(
+    request: Request,
+    source: str = Path(description="资源源标识，见 /api/resources"),
+    q: str = Query(min_length=1, description="关键词；留空请用 /latest"),
+    page: int = Query(1, ge=1),
+    category: str | None = Query(None, description="分类名或 sort_id，例如 動畫/漫畫/游戏/3"),
+) -> ResourceSearchResult:
+    resource_source = _resource_or_404(request, source)
+    try:
+        items = await resource_source.search(q, page=page, category=category)
+    except SourceError as exc:
+        raise _translate(exc) from exc
+    return ResourceSearchResult(
+        source=source, keyword=q, page=page, category=category, count=len(items), items=items
+    )
+
+
+@app.get(
+    "/api/resources/{source}/latest",
+    response_model=ResourceList,
+    summary="最新发布",
+)
+async def resource_latest(
+    request: Request,
+    source: str = Path(description="资源源标识"),
+    page: int = Query(1, ge=1),
+    category: str | None = Query(None, description="分类名或 sort_id"),
+) -> ResourceList:
+    resource_source = _resource_or_404(request, source)
+    try:
+        items = await resource_source.latest(page=page, category=category)
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except SourceError as exc:
+        raise _translate(exc) from exc
+    return ResourceList(source=source, page=page, count=len(items), items=items)
+
+
+@app.get(
+    "/api/resources/{source}/item/{item_id}",
+    response_model=ResourceDetail,
+    summary="资源详情：磁力 / 种子 / 文件列表",
+)
+async def resource_detail(
+    request: Request,
+    source: str = Path(description="资源源标识"),
+    item_id: str = Path(description="资源 id（列表里的 id 或 detail_url 的路径）"),
+) -> ResourceDetail:
+    resource_source = _resource_or_404(request, source)
+    _, _, detail_cache, _ = _state(request)
+    cache_key = f"resource:{source}:{item_id}"
+    cached = detail_cache.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        detail = await resource_source.detail(item_id)
+    except SourceError as exc:
+        raise _translate(exc) from exc
+    detail_cache.set(cache_key, detail)
+    return detail
+
+
+__all__ = ["app", "RESOURCE_CLASSES", "SOURCE_CLASSES"]

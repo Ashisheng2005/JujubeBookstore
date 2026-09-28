@@ -67,19 +67,25 @@ class RetryingClient(httpx.AsyncClient):
 class HttpClientPool:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._clients: dict[bool, httpx.AsyncClient] = {}
+        self._clients: dict[tuple[bool, str | None], httpx.AsyncClient] = {}
 
     @property
     def proxy_available(self) -> bool:
         """是否配置了代理（供 ``prefer_proxy`` 的源判断）。"""
         return self._settings.proxy_enabled
 
-    def client(self, *, use_proxy: bool) -> httpx.AsyncClient:
+    def client(self, *, use_proxy: bool, local_address: str | None = None) -> httpx.AsyncClient:
+        """取一个复用的客户端。
+
+        ``local_address="0.0.0.0"`` 会强制走 IPv4：部分站点（如动漫花园）的 AAAA 记录是
+        伪地址，httpcore 先连 IPv6 会一直挂到超时，强制 IPv4 反而能通。
+        """
         if use_proxy and not self._settings.proxy_enabled:
             raise ProxyRequiredError(
                 "该源需要通过代理访问，请设置环境变量 JUJUBE_PROXY（例如 http://127.0.0.1:7897）"
             )
-        client = self._clients.get(use_proxy)
+        key = (use_proxy, local_address)
+        client = self._clients.get(key)
         if client is None or client.is_closed:
             kwargs: dict[str, object] = {
                 "timeout": httpx.Timeout(self._settings.timeout),
@@ -97,8 +103,12 @@ class HttpClientPool:
             }
             if use_proxy:
                 kwargs["proxy"] = self._settings.proxy
+            elif local_address:
+                kwargs["transport"] = httpx.AsyncHTTPTransport(
+                    local_address=local_address, retries=self._settings.http_retries
+                )
             client = RetryingClient(**kwargs)  # type: ignore[arg-type]
-            self._clients[use_proxy] = client
+            self._clients[key] = client
         return client
 
     async def aclose(self) -> None:

@@ -18,10 +18,10 @@ class StubPool:
 
     def __init__(self, *, proxy_available: bool) -> None:
         self.proxy_available = proxy_available
-        self.requested: list[bool] = []
+        self.requested: list[tuple[bool, str | None]] = []
 
-    def client(self, *, use_proxy: bool):
-        self.requested.append(use_proxy)
+    def client(self, *, use_proxy: bool, local_address: str | None = None):
+        self.requested.append((use_proxy, local_address))
         return object()
 
 
@@ -44,26 +44,76 @@ class PreferProxySource(DirectSource):
     prefer_proxy = True
 
 
+class PreferIpv4Source(DirectSource):
+    key = "ipv4"
+    prefer_ipv4 = True
+
+
+class PreferProxyIpv4Source(DirectSource):
+    key = "prefer-both"
+    prefer_proxy = True
+    prefer_ipv4 = True
+
+
 def test_direct_source_never_uses_proxy():
     pool = StubPool(proxy_available=True)
     DirectSource(pool).client  # noqa: B018 - 只取属性
-    assert pool.requested == [False]
+    assert pool.requested == [(False, None)]
 
 
 def test_needs_proxy_source_always_uses_proxy():
     pool = StubPool(proxy_available=True)
     NeedsProxySource(pool).client  # noqa: B018
-    assert pool.requested == [True]
+    assert pool.requested == [(True, None)]
 
 
 def test_prefer_proxy_uses_proxy_only_when_configured():
     with_proxy = StubPool(proxy_available=True)
     PreferProxySource(with_proxy).client  # noqa: B018
-    assert with_proxy.requested == [True]
+    assert with_proxy.requested == [(True, None)]
 
     without_proxy = StubPool(proxy_available=False)
     PreferProxySource(without_proxy).client  # noqa: B018
-    assert without_proxy.requested == [False]
+    assert without_proxy.requested == [(False, None)]
+
+
+def test_prefer_ipv4_falls_back_to_ipv4_transport():
+    pool = StubPool(proxy_available=False)
+    PreferIpv4Source(pool).client  # noqa: B018
+    assert pool.requested == [(False, "0.0.0.0")]
+
+
+def test_prefer_proxy_wins_over_prefer_ipv4():
+    with_proxy = StubPool(proxy_available=True)
+    PreferProxyIpv4Source(with_proxy).client  # noqa: B018
+    assert with_proxy.requested == [(True, None)]
+
+    without_proxy = StubPool(proxy_available=False)
+    PreferProxyIpv4Source(without_proxy).client  # noqa: B018
+    assert without_proxy.requested == [(False, "0.0.0.0")]
+
+
+def test_pool_keeps_separate_clients_for_ipv4_transport():
+    settings = Settings(
+        host="127.0.0.1",
+        port=8000,
+        proxy="http://127.0.0.1:7897",
+        timeout=5,
+        user_agent="test",
+        detail_ttl=1,
+        chapter_ttl=1,
+        image_proxy_enabled=True,
+        image_proxy_max_bytes=1024,
+        http_retries=1,
+    )
+    pool = HttpClientPool(settings)
+    direct = pool.client(use_proxy=False)
+    ipv4 = pool.client(use_proxy=False, local_address="0.0.0.0")
+    proxied = pool.client(use_proxy=True)
+    assert direct is not ipv4
+    assert direct is not proxied
+    assert isinstance(ipv4._transport, httpx.AsyncHTTPTransport)
+    asyncio.run(pool.aclose())
 
 
 def test_pool_requires_proxy_for_needs_proxy_sources():
