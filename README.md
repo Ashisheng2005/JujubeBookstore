@@ -167,6 +167,38 @@ python scripts/smoke.py 海贼王 --kind resource --source dmhy            # 资
 python scripts/smoke.py 海贼王 --kind resource --source dmhy --category 漫畫
 ```
 
+## 仓库与镜像约定
+
+本仓库有两个远端，**主仓库是 radishtools，GitHub 只是留存镜像**：
+
+| 远端 | 地址 | 角色 |
+| --- | --- | --- |
+| `origin` | `git@git.radishtools.fun:repork/JujubeBookstore.git` | **主仓库**：唯一权威源，`main` 跟踪 `origin/main` |
+| `github` | `git@github.com:Ashisheng2005/JujubeBookstore.git` | 镜像：只推不拉 |
+
+镜像端做了两处限制，避免误用：
+
+```bash
+remote.github.skipDefaultUpdate = true   # git fetch --all / git remote update 会跳过镜像
+remote.github.tagOpt = --no-tags         # 不从镜像拉取 tag
+```
+
+日常操作：
+
+```bash
+git publish              # 同时发布到两个远端（= push origin main --follow-tags && push github main --follow-tags）
+git push                 # 只推主仓库（上游是 origin/main）
+git push github main     # 只更新镜像
+```
+
+始终以 `origin` 为基准：合并/拉取只在主仓库做，镜像只做单向推送。
+若要让 `git push` 一条命令就同时推送两个地址，也可以改用
+`git remote set-url --add --push origin git@github.com:Ashisheng2005/JujubeBookstore.git`，
+但那样两个目标会共用一个远端名，某一个失败时不容易区分，因此这里默认不这么配。
+
+> ⚠️ 该 GitHub 仓库建议保持 **private**：项目会抓取漫画站点并索引 BT 资源。
+> 仓库目前没有 LICENSE 文件，默认「保留所有权利」。
+
 ## 站点调研与踩坑记录
 
 ### 本机网络实测（无代理时）
