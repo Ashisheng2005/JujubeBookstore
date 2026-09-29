@@ -45,11 +45,27 @@ python scripts/smoke.py 海贼王 --kind resource --source dmhy --category 漫�
 export JUJUBE_PROXY=http://127.0.0.1:7897
 python scripts/smoke.py 火影忍者 --source mangacopy
 
-# 启动服务
+# 启动服务（前端 + 后端同一个进程）
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+# 打开内置控制台：http://127.0.0.1:8000/
 ```
 
-交互式文档：<http://127.0.0.1:8000/docs>
+交互式 API 文档：<http://127.0.0.1:8000/docs>；内置控制台：<http://127.0.0.1:8000/>
+
+## 内置前端控制台
+
+`web/index.html` 是一个**单文件、零依赖**的控制台页面（原生 JS，无构建步骤），由 FastAPI 在 `/` 直接托管——
+所以「拉起前后端」只有一条命令，也不存在跨域配置。视觉上它长这样：
+
+- **顶部**：后端状态、代理状态（`代理 已启用/未配置`）、源数量
+- **两个模式**：`漫画源` 与 `资源源（BT/磁力）`，切换时自动换源下拉框
+- **漫画流程**：搜索 → 封面卡片墙 → 点卡片进详情（标签 / 简介 / 按 `group` 分栏的章节）→ 点章节看整页图片
+  （图片一律走 `/api/{source}/image` 中转，绕开防盗链；封面也走中转，失败自动回退原始地址）
+- **资源流程**：搜索（dmhy 支持分类下拉：動畫 / 漫畫 / 音樂…）或最近更新 → 结果列表（分类 / 大小 / 发布时间 / 做种数）
+  → 详情页展示磁力、`.torrent` 直链与文件清单，支持一键复制磁力
+- **右侧请求日志**：每条请求的状态码、耗时、URL，排查限流/超时很直观
+
+想换成 Vue/React 也可以：把 `web/index.html` 换成构建产物即可，API 不变（服务端已开 CORS）。
 
 ## API
 
@@ -139,7 +155,9 @@ app/
   resources/         资源索引源（ResourceSource，BT/磁力）
     base.py          search / latest / detail 抽象
     dmhy.py          动漫花园（HTML 解析 + 分类映射）
+web/index.html       内置前端控制台（单文件、零依赖，由 FastAPI 托管在 /）
 scripts/smoke.py     真实联网联调脚本（--kind comic|resource）
+scripts/ui_flow_check.mjs  按前端的调用链逐项校验接口契约（Node 内置 fetch，无需依赖）
 tests/               77 项离线单测（fixtures 为真实抓取的响应片段）
 ```
 
@@ -165,6 +183,9 @@ python -m pytest                                       # 77 项，全离线，�
 python scripts/smoke.py 海贼王 --source mangabz         # 漫画源真实联网
 python scripts/smoke.py 海贼王 --kind resource --source dmhy            # 资源源真实联网
 python scripts/smoke.py 海贼王 --kind resource --source dmhy --category 漫畫
+
+# 前端契约校验：先起服务，再跑（逐项检查前端会打的请求与它读取的字段）
+node scripts/ui_flow_check.mjs http://127.0.0.1:8000
 ```
 
 ## 仓库与镜像约定

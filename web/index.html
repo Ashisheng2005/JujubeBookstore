@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JujubeBookstore · 漫画 / 资源控制台</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e2230; --line:#2b3140;
+    --fg:#e6e9ef; --dim:#8b93a7; --accent:#7c9ef8; --ok:#3ecf8e; --warn:#f5a524; --err:#f2555a;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+       font:14px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line);
+         position:sticky;top:0;background:rgba(15,17,21,.92);backdrop-filter:blur(6px);z-index:5}
+  h1{font-size:16px;margin:0;letter-spacing:.3px}
+  .badge{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
+  .badge.ok{color:var(--ok);border-color:#1f4d3a}
+  .badge.warn{color:var(--warn);border-color:#4d3d1f}
+  nav{display:flex;gap:8px;padding:12px 18px 0}
+  nav button{background:var(--panel);color:var(--dim);border:1px solid var(--line);border-radius:8px;
+             padding:7px 14px;cursor:pointer;font-size:13px}
+  nav button.active{background:var(--panel2);color:var(--fg);border-color:#3b4560}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 18px;
+            border-bottom:1px solid var(--line)}
+  select,input,button{background:var(--panel);color:var(--fg);border:1px solid var(--line);
+                      border-radius:8px;padding:7px 10px;font-size:13px;outline:none}
+  input#q{flex:1;min-width:200px}
+  button.primary{background:#2b3a63;border-color:#3b4f85;color:#cfe0ff;cursor:pointer}
+  button.primary:hover{background:#33456f}
+  main{display:grid;grid-template-columns:1fr 380px;gap:0;align-items:start}
+  @media(max-width:1000px){main{grid-template-columns:1fr}}
+  .col{padding:16px 18px;min-height:60vh}
+  .col.left{border-right:1px solid var(--line)}
+  .muted{color:var(--dim);font-size:12.5px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;cursor:pointer;
+        transition:transform .12s,border-color .12s}
+  .card:hover{transform:translateY(-2px);border-color:#3b4560}
+  .card img{width:100%;height:176px;object-fit:cover;background:#0b0d11;display:block}
+  .card .t{padding:8px 9px;font-size:12.5px;line-height:1.35;height:56px;overflow:hidden}
+  .card .s{padding:0 9px 9px;font-size:11.5px;color:var(--dim)}
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:4px}
+  .chip{font-size:11px;padding:1px 7px;border-radius:999px;background:#232838;color:#a9b3cc}
+  h2{font-size:15px;margin:0 0 10px}
+  h3{font-size:13px;margin:16px 0 8px;color:var(--dim);font-weight:600}
+  .row{display:flex;gap:10px;align-items:baseline;padding:9px 0;border-bottom:1px solid #21262f}
+  .row .k{color:var(--dim);font-size:12px;min-width:64px}
+  .chap{display:inline-block;margin:3px 6px 3px 0;padding:4px 9px;background:var(--panel2);
+        border:1px solid var(--line);border-radius:7px;font-size:12.5px;cursor:pointer;color:#cdd6ea}
+  .chap:hover{border-color:#3b4560;color:#fff}
+  .pages{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+  .pages img{width:100%;border-radius:6px;background:#0b0d11;min-height:80px}
+  .res{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:10px}
+  .res .title{font-size:13.5px;margin-bottom:5px;word-break:break-all}
+  .res .meta{font-size:12px;color:var(--dim);display:flex;gap:12px;flex-wrap:wrap}
+  .res .acts{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}
+  a{color:var(--accent);text-decoration:none;word-break:break-all}
+  a:hover{text-decoration:underline}
+  code{background:#12151c;border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
+  .side{padding:16px 18px;border-left:1px solid var(--line);background:#12141a;min-height:60vh}
+  .side h2{display:flex;justify-content:space-between;align-items:center}
+  #log{font:11.5px/1.5 ui-monospace,Consolas,monospace;max-height:70vh;overflow:auto}
+  #log div{padding:3px 0;border-bottom:1px dashed #1e232c;word-break:break-all}
+  .s2{color:var(--ok)} .s4{color:var(--warn)} .s5{color:var(--err)}
+  .spinner{display:inline-block;width:12px;height:12px;border:2px solid #3b4560;border-top-color:#cfe0ff;
+           border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  details{margin-top:6px}
+  summary{cursor:pointer;color:var(--dim);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <h1>JujubeBookstore</h1>
+  <span class="badge" id="status">连接中…</span>
+  <span class="badge" id="proxybadge">代理 ?</span>
+  <span class="muted" id="hint"></span>
+</header>
+
+<nav>
+  <button data-mode="comic" class="active">漫画源</button>
+  <button data-mode="resource">资源源（BT/磁力）</button>
+</nav>
+
+<div class="controls">
+  <select id="source"></select>
+  <select id="category" style="display:none"></select>
+  <input id="q" placeholder="关键词，例如：海贼王 / 火影" autocomplete="off">
+  <label class="muted">页 <input id="page" type="number" value="1" min="1" style="width:62px"></label>
+  <button class="primary" id="go">搜索</button>
+  <button id="latest">最近更新</button>
+</div>
+
+<main>
+  <div class="col left">
+    <div id="results"><p class="muted">选择源与模式，然后搜索。</p></div>
+  </div>
+  <aside class="side">
+    <h2>请求日志 <button id="clearlog" style="font-size:11px;padding:2px 8px">清空</button></h2>
+    <div id="log"></div>
+  </aside>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let MODE = 'comic';
+let SOURCES = { comic: [], resource: [] };
+let CURRENT = { source: null, comic: null, chapter: null };
+
+const DMHY_CATEGORIES = [
+  ['', '全部分类'], ['動畫', '動畫'], ['漫畫', '漫畫'], ['音樂', '音樂'], ['日劇', '日劇'],
+  ['ＲＡＷ', 'ＲＡＷ'], ['遊戲', '遊戲'], ['特攝', '特攝'], ['季度全集', '季度全集'],
+  ['港台原版', '港台原版'], ['日文原版', '日文原版'], ['動漫音樂', '動漫音樂'],
+];
+
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function log(status, ms, text, cls){
+  const el = document.createElement('div');
+  el.className = cls || '';
+  el.innerHTML = `<span class="${status>=500?'s5':status>=400?'s4':'s2'}">${status||'ERR'}</span> ${ms}ms · ${esc(text)}`;
+  $('log').prepend(el);
+}
+
+async function api(path, opts){
+  const t0 = performance.now();
+  try {
+    const r = await fetch(path, opts);
+    const ms = Math.round(performance.now() - t0);
+    let body = null;
+    try { body = await r.json(); } catch(e){}
+    log(r.status, ms, decodeURIComponent(path));
+    if (!r.ok) throw new Error((body && (body.detail || body.message)) || ('HTTP ' + r.status));
+    return body;
+  } catch (e) {
+    if (!(e instanceof Error && /HTTP \d|detail/.test(e.message))) log('ERR', Math.round(performance.now()-t0), path, 's5');
+    throw e;
+  }
+}
+
+const imgProxy = (source, url) => `/api/${source}/image?url=${encodeURIComponent(url)}`;
+const spinner = () => '<p class="muted"><span class="spinner"></span> 加载中…</p>';
+const fail = (e) => `<p style="color:var(--err)">出错：${esc(e.message)}</p>`;
+
+async function boot(){
+  try{
+    const h = await api('/healthz');
+    $('status').textContent = `后端正常 · ${h.sources.length} 漫画源 / ${h.resource_sources.length} 资源源`;
+    $('status').className = 'badge ok';
+    $('proxybadge').textContent = h.proxy_enabled ? '代理 已启用' : '代理 未配置';
+    $('proxybadge').className = 'badge ' + (h.proxy_enabled ? 'ok' : 'warn');
+    $('hint').textContent = h.proxy_enabled ? '' : '拷贝漫画与 dmhy 建议配置 JUJUBE_PROXY';
+  }catch(e){
+    $('status').textContent = '后端不可达';
+    $('status').className = 'badge warn';
+  }
+  SOURCES.comic = await api('/api/sources');
+  SOURCES.resource = await api('/api/resources');
+  fillSources();
+}
+
+function fillSources(){
+  const list = SOURCES[MODE];
+  $('source').innerHTML = list.map(s =>
+    `<option value="${esc(s.key)}">${esc(s.name)} (${esc(s.key)})${s.needs_proxy ? ' · 需代理' : s.prefer_proxy ? ' · 优先代理' : ''}</option>`
+  ).join('');
+  $('category').style.display = MODE === 'resource' && $('source').value === 'dmhy' ? '' : 'none';
+  $('q').placeholder = MODE === 'comic' ? '关键词，例如：海贼王 / 火影' : '资源关键词，例如：海贼王 / SweetSub';
+}
+
+function fillCategories(){
+  const isDmhy = MODE === 'resource' && $('source').value === 'dmhy';
+  $('category').style.display = isDmhy ? '' : 'none';
+  if (isDmhy) $('category').innerHTML = DMHY_CATEGORIES.map(([v,l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+}
+
+document.querySelectorAll('nav button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('nav button').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  MODE = b.dataset.mode;
+  $('results').innerHTML = '';
+  $('q').value = '';
+  fillSources(); fillCategories();
+});
+
+$('source').onchange = fillCategories;
+$('clearlog').onclick = () => $('log').innerHTML = '';
+$('go').onclick = () => MODE === 'comic' ? searchComic() : searchResource();
+$('latest').onclick = () => MODE === 'comic' ? latestComic() : latestResource();
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') $('go').click(); });
+
+// ---------- 漫画 ----------
+async function searchComic(){
+  const src = $('source').value, q = $('q').value.trim(), page = $('page').value || 1;
+  if (!q) return;
+  $('results').innerHTML = spinner();
+  try{
+    const d = await api(`/api/${src}/search?q=${encodeURIComponent(q)}&page=${page}`);
+    renderComics(d);
+  }catch(e){ $('results').innerHTML = fail(e); }
+}
+
+async function latestComic(){
+  const src = $('source').value, page = $('page').value || 1;
+  $('results').innerHTML = spinner();
+  try{
+    const d = await api(`/api/${src}/latest?page=${page}`);
+    renderComics(d, '最近更新');
+  }catch(e){ $('results').innerHTML = fail(e); }
+}
+
+function renderComics(d, title){
+  if (!d.items.length) return $('results').innerHTML = '<p class="muted">没有结果。</p>';
+  $('results').innerHTML = `
+    <h2>${esc(title || `搜索「${d.keyword}」`)} <span class="muted">· ${esc(d.source)} · ${d.count} 条</span></h2>
+    <div class="grid">${d.items.map((it, i) => `
+      <div class="card" data-i="${i}">
+        <img loading="lazy" src="${it.cover ? esc(imgProxy(d.source, it.cover)) : ''}"
+             onerror="this.onerror=null;this.src='${it.cover ? esc(it.cover) : ''}'">
+        <div class="t">${esc(it.title)}</div>
+        <div class="s">${esc(it.status || '')}</div>
+      </div>`).join('')}
+    </div>`;
+  $('results').querySelectorAll('.card').forEach(card => {
+    card.onclick = () => openComic(d.source, d.items[+card.dataset.i]);
+  });
+}
+
+async function openComic(source, item){
+  CURRENT.source = source;
+  $('results').innerHTML = spinner();
+  try{
+    const det = await api(`/api/${source}/comic/${encodeURIComponent(item.id)}`);
+    const groups = {};
+    det.chapters.forEach(c => (groups[c.group] = groups[c.group] || []).push(c));
+    $('results').innerHTML = `
+      <h2>${esc(det.title)} <span class="muted">· ${esc(source)} · ${det.chapters.length} 章</span></h2>
+      <div style="display:flex;gap:14px;align-items:flex-start">
+        ${det.cover ? `<img src="${esc(imgProxy(source, det.cover))}" style="width:132px;border-radius:8px" onerror="this.onerror=null;this.src='${esc(det.cover)}'">` : ''}
+        <div>
+          ${Object.entries(det.tags || {}).map(([k,v]) =>
+            `<div class="row"><span class="k">${esc(k)}</span><span>${v.map(esc).join('、')}</span></div>`).join('')}
+          <div class="row"><span class="k">更新时间</span><span>${esc(det.update_time || '-')}</span></div>
+          ${det.description ? `<div class="row"><span class="k">简介</span><span>${esc(det.description)}</span></div>` : ''}
+        </div>
+      </div>
+      ${Object.entries(groups).map(([g, list]) => `
+        <h3>${esc(g)} · ${list.length} 章</h3>
+        <div>${list.map(c => `<span class="chap" data-id="${esc(c.id)}">${esc(c.title || c.id)}</span>`).join('')}</div>
+      `).join('')}
+      <p><button id="back">← 返回结果</button></p>`;
+    $('back').onclick = () => searchComic();
+    $('results').querySelectorAll('.chap').forEach(el => {
+      el.onclick = () => openChapter(source, det.id, el.dataset.id, el.textContent);
+    });
+  }catch(e){ $('results').innerHTML = fail(e); }
+}
+
+async function openChapter(source, comicId, chapterId, title){
+  CURRENT.chapter = chapterId;
+  $('results').innerHTML = spinner();
+  try{
+    const d = await api(`/api/${source}/comic/${encodeURIComponent(comicId)}/chapter/${encodeURIComponent(chapterId)}`);
+    $('results').innerHTML = `
+      <h2>${esc(d.title || title)} <span class="muted">· ${d.count} 页</span></h2>
+      <p class="muted">图片走 <code>/api/${esc(source)}/image</code> 中转（绕开防盗链）。</p>
+      <div class="pages">${d.images.map((u, i) =>
+        `<img loading="lazy" src="${esc(imgProxy(source, u))}" alt="p${i+1}">`).join('')}</div>
+      <p><button id="back">← 返回章节列表</button></p>`;
+    $('back').onclick = () => openComic(source, {id: comicId});
+  }catch(e){ $('results').innerHTML = fail(e); }
+}
+
+// ---------- 资源 ----------
+async function searchResource(){
+  const src = $('source').value, q = $('q').value.trim(), page = $('page').value || 1;
+  if (!q) return;
+  $('results').innerHTML = spinner();
+  try{
+    const cat = $('category').value;
+    const d = await api(`/api/resources/${src}/search?q=${encodeURIComponent(q)}&page=${page}` + (cat ? `&category=${encodeURIComponent(cat)}` : ''));
+    renderResources(d, `搜索「${d.keyword}」`);
+  }catch(e){ $('results').innerHTML = fail(e); }
+}
+
+async function latestResource(){
+  const src = $('source').value, page = $('page').value || 1;
+  $('results').innerHTML = spinner();
+  try{
+    const cat = $('category').value;
+    const d = await api(`/api/resources/${src}/latest?page=${page}` + (cat ? `&category=${encodeURIComponent(cat)}` : ''));
+    renderResources(d, '最新发布');
+  }catch(e){ $('results').innerHTML = fail(e); }
+}
+
+function renderResources(d, title){
+  if (!d.items.length) return $('results').innerHTML = '<p class="muted">没有结果。</p>';
+  $('results').innerHTML = `
+    <h2>${esc(title)} <span class="muted">· ${esc(d.source)} · ${d.count} 条</span></h2>
+    ${d.items.map((it, i) => `
+      <div class="res">
+        <div class="title">${esc(it.title)}</div>
+        <div class="meta">
+          <span>${esc(it.category || '-')}</span><span>${esc(it.size || '-')}</span>
+          <span>${esc(it.published_at || '-')}</span>
+          ${it.publisher ? `<span>${esc(it.publisher)}</span>` : ''}
+          ${it.seeders ? `<span>做种 ${esc(it.seeders)}</span>` : ''}
+        </div>
+        <div class="acts">
+          <button class="primary" data-detail="${i}">详情 / 种子</button>
+          ${it.magnet ? `<button data-copy="${i}">复制磁力</button>` : ''}
+          ${it.magnet ? `<a href="${esc(it.magnet)}">磁力链接</a>` : ''}
+        </div>
+        <details><summary>原始字段</summary><code>${esc(JSON.stringify({id: it.id, magnet: it.magnet}))}</code></details>
+      </div>`).join('')}`;
+
+  $('results').querySelectorAll('[data-detail]').forEach(b => b.onclick = () => openResource(d.source, d.items[+b.dataset.detail]));
+  $('results').querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
+    try { await navigator.clipboard.writeText(d.items[+b.dataset.copy].magnet); b.textContent = '已复制 ✓'; }
+    catch(e){ b.textContent = '复制失败'; }
+  });
+}
+
+async function openResource(source, item){
+  $('results').innerHTML = spinner();
+  try{
+    const d = await api(`/api/resources/${source}/item/${encodeURIComponent(item.id)}`);
+    $('results').innerHTML = `
+      <h2>${esc(d.title)}</h2>
+      <div class="row"><span class="k">分类</span><span>${esc(d.category || '-')}</span></div>
+      <div class="row"><span class="k">大小</span><span>${esc(d.size || '-')}</span></div>
+      <div class="row"><span class="k">发布</span><span>${esc(d.published_at || '-')}</span></div>
+      <div class="row"><span class="k">磁力</span><span><a href="${esc(d.magnet || '#')}">${esc((d.magnet || '无').slice(0, 72))}…</a></span></div>
+      <div class="row"><span class="k">种子</span><span>${d.torrent ? `<a href="${esc(d.torrent)}">${esc(d.torrent)}</a>` : '无'}</span></div>
+      <h3>文件 ${d.files.length} 个</h3>
+      ${d.files.map(f => `<div class="row"><span>${esc(f.name)}</span><span class="muted" style="margin-left:auto">${esc(f.size || '')}</span></div>`).join('')}
+      <p><button id="back">← 返回结果</button></p>`;
+    $('back').onclick = () => searchResource();
+  }catch(e){ $('results').innerHTML = fail(e); }
+}
+
+boot();
+</script>
+</body>
+</html>

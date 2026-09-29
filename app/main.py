@@ -19,11 +19,13 @@
 from __future__ import annotations
 
 import contextlib
+from pathlib import Path as FilePath
 from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Path, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
 from . import __version__
 from .cache import TTLCache
@@ -106,6 +108,19 @@ def _translate(exc: SourceError) -> HTTPException:
     if isinstance(exc, NotFoundError):
         return HTTPException(status_code=404, detail=str(exc))
     return HTTPException(status_code=502, detail=str(exc))
+
+
+#: 内置前端（单文件、零依赖，和后端同一个进程）
+WEB_DIR = FilePath(__file__).resolve().parent.parent / "web"
+
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def console() -> HTMLResponse:
+    """控制台页面：搜索、章节、图片、磁力资源。"""
+    index = WEB_DIR / "index.html"
+    if not index.is_file():
+        raise HTTPException(status_code=404, detail="前端文件缺失：web/index.html")
+    return HTMLResponse(index.read_text(encoding="utf-8"))
 
 
 def _resource_or_404(request: Request, source: str):
