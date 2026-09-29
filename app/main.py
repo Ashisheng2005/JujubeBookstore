@@ -32,6 +32,9 @@ from .cache import TTLCache
 from .config import Settings, load_settings
 from .errors import NotFoundError, ProxyRequiredError, SourceError
 from .http_client import HttpClientPool
+from .downloads.api import router as download_router
+from .downloads.manager import DownloadManager
+from .downloads.repository import DownloadRepository
 from .resources import RESOURCE_CLASSES, create_resource
 from .resources import available_keys as resource_keys
 from .schemas import (
@@ -50,11 +53,22 @@ from .sources import SOURCE_CLASSES, available_keys, create_source
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
     _init_state(app)
+    settings = app.state.settings
+    root = FilePath(settings.download_dir).resolve()
+    repository = DownloadRepository(FilePath(settings.download_db) if settings.download_db else root / "downloads.db")
     try:
+        await repository.open()
+        app.state.downloads = DownloadManager(repository, app.state.pool, settings)
+        await app.state.downloads.start()
         yield
     finally:
+        if getattr(app.state, "downloads", None) is not None:
+            await app.state.downloads.stop()
+            app.state.downloads = None
+        await repository.close()
         with contextlib.suppress(Exception):
             await app.state.pool.aclose()
+        app.state.pool = None
 
 
 app = FastAPI(
@@ -71,6 +85,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(download_router)
 
 
 def _init_state(app: FastAPI) -> None:

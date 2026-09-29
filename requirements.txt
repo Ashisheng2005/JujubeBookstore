@@ -1,9 +1,12 @@
-fastapi>=0.115
+fastapi>=0.115.6
 uvicorn>=0.30
 httpx>=0.28
 pydantic>=2.7
 beautifulsoup4>=4.12
 lxml>=5.0
+aiosqlite>=0.20
+aiofiles>=24.1
+bencodepy>=0.9.5
 
 # 开发/测试
 pytest>=8.0

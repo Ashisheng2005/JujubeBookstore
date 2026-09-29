@@ -8,7 +8,7 @@
 - 技术栈：Python 3.12 + FastAPI + httpx
 - 解析逻辑与 HTTP 层、站点元数据分离：新增站点 = 加一个源类 + 注册一行
 - 每个源都**真实联网验证**过，不是纸面接口
-- 77 项离线单测（fixtures 是真实抓取的响应片段）+ 真实联网联调脚本
+- 118 项离线测试（包含下载管理测试）+ 真实联网联调脚本
 
 ## 已实现的源
 
@@ -66,6 +66,38 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 - **右侧请求日志**：每条请求的状态码、耗时、URL，排查限流/超时很直观
 
 想换成 Vue/React 也可以：把 `web/index.html` 换成构建产物即可，API 不变（服务端已开 CORS）。
+
+## 下载管理 V1
+
+导航中的「下载管理」支持分组、状态筛选、进度/速度/ETA、任务文件详情和批量暂停/恢复/取消。
+漫画详情可预览并下载章节组，阅读页可下载单章；资源详情可下载 `.torrent`。
+漫画统一输出 CBZ，完成后可从任务操作栏下载文件。
+
+任务使用 `aiosqlite` 持久化到 SQLite（WAL）；默认 2 个后台 worker，每章最多并发下载 4 张图片。
+暂停保留临时文件，恢复时复用已完成图片；种子文件支持 HTTP Range 续传。
+服务重启会恢复排队中和中断的任务，已暂停任务保持暂停。
+重复提交同一章节会返回已有任务，分组和标题不影响幂等判断。
+
+```env
+JUJUBE_DOWNLOAD_DIR=./downloads
+# 不设置时使用下载目录下的 downloads.db
+JUJUBE_DOWNLOAD_DB=./downloads/downloads.db
+JUJUBE_DOWNLOAD_WORKERS=2
+JUJUBE_DOWNLOAD_IMAGE_CONCURRENCY=4
+JUJUBE_DOWNLOAD_RETRIES=3
+JUJUBE_DOWNLOAD_RESUME=1
+JUJUBE_DOWNLOAD_BATCH_MAX_ITEMS=100
+```
+
+启动仍使用上面的 uvicorn 命令，保持单进程运行（不要设置多个 uvicorn workers）。
+分组保存路径仅接受下载根目录下的相对目录；修改分组路径只影响之后创建的任务。
+删除分组保留关联任务和文件；删除已完成、失败或取消的任务会清理该任务文件。
+暂停中的任务需要先取消才能删除。V1 下载种子文件，不执行磁力或 BT 数据下载。
+
+下载 API 包括 `/api/download-groups`、`/api/downloads`、`/api/downloads/batch`、
+`/api/download-batches/preview` 和 `/api/download-batches/{batch_id}`。
+SSE 地址为 `/api/downloads/events`；完成文件地址为 `/api/downloads/{task_id}/content`。
+重复章节也会关联到新批次，旧批次的成员保持可查询。完整接口见 `/docs`。
 
 ## API
 
@@ -146,6 +178,7 @@ app/
   cache.py           极简 TTL 缓存
   schemas.py         对外统一数据结构
   errors.py          SourceError / NotFoundError / ProxyRequiredError
+  downloads/         下载任务库、状态机、后台 worker、SSE、HTTP 下载与 CBZ 打包
   sources/           漫画源（ComicSource）
     base.py          search / detail / chapter 抽象
     zaimanhua.py     再漫画（App v4 API）
@@ -179,13 +212,17 @@ tests/               77 项离线单测（fixtures 为真实抓取的响应片�
 ## 测试
 
 ```bash
-python -m pytest                                       # 77 项，全离线，约 9s
+python -m pytest                                       # 118 项，全离线
 python scripts/smoke.py 海贼王 --source mangabz         # 漫画源真实联网
 python scripts/smoke.py 海贼王 --kind resource --source dmhy            # 资源源真实联网
 python scripts/smoke.py 海贼王 --kind resource --source dmhy --category 漫畫
 
 # 前端契约校验：先起服务，再跑（逐项检查前端会打的请求与它读取的字段）
 node scripts/ui_flow_check.mjs http://127.0.0.1:8000
+
+# 下载前端离线流程检查：运行中的服务只提供页面，下载 API 使用浏览器 fixtures
+# Playwright 是此检查脚本的可选依赖：pip install playwright
+python scripts/download_ui_check.py --executable "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"
 ```
 
 ## 仓库与镜像约定

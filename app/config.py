@@ -76,6 +76,13 @@ class Settings:
     image_proxy_enabled: bool
     image_proxy_max_bytes: int
     http_retries: int
+    download_dir: str = "./downloads"
+    download_db: str | None = None
+    download_workers: int = 2
+    download_image_concurrency: int = 4
+    download_retries: int = 3
+    download_resume: bool = True
+    download_batch_max_items: int = 100
 
     @property
     def proxy_enabled(self) -> bool:
@@ -99,4 +106,11 @@ def load_settings() -> Settings:
         image_proxy_enabled=_env_bool("IMAGE_PROXY", True),
         image_proxy_max_bytes=_env_int("IMAGE_PROXY_MAX_BYTES", 15 * 1024 * 1024),
         http_retries=_env_int("HTTP_RETRIES", 2),
+        download_dir=_env_str("DOWNLOAD_DIR", "./downloads"),
+        download_db=_env_opt_str("DOWNLOAD_DB"),
+        download_workers=max(1, _env_int("DOWNLOAD_WORKERS", 2)),
+        download_image_concurrency=max(1, _env_int("DOWNLOAD_IMAGE_CONCURRENCY", 4)),
+        download_retries=max(0, _env_int("DOWNLOAD_RETRIES", 3)),
+        download_resume=_env_bool("DOWNLOAD_RESUME", True),
+        download_batch_max_items=max(1, _env_int("DOWNLOAD_BATCH_MAX_ITEMS", 100)),
     )
